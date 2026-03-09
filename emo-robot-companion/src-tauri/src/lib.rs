@@ -6,6 +6,7 @@ pub mod ai;
 pub mod voice;
 
 use ai::model_manager::QwenModel;
+use ai::model_downloader;
 use ai::tools::ToolManager;
 use ai::prompts::{build_agent_prompt, build_chat_prompt, parse_tool_call};
 use ai::router::{route, requires_tool, ModelTier};
@@ -98,6 +99,45 @@ fn is_large_model_idle(state: State<'_, AppState>) -> bool {
         .ok()
         .and_then(|guard| guard.as_ref().map(|m| m.is_idle()))
         .unwrap_or(false)
+}
+
+// ─── Model Download / Setup ───────────────────────────────────────────────────
+
+/// Check if all required models are already downloaded.
+#[tauri::command]
+async fn check_models_downloaded() -> Result<serde_json::Value, String> {
+    let models_dir = model_downloader::get_models_dir().map_err(|e| e.to_string())?;
+    let statuses = model_downloader::check_model_status(&models_dir);
+    let all_ready = statuses.iter().all(|(_, ready)| *ready);
+    let status_map: std::collections::HashMap<String, bool> = statuses.into_iter().collect();
+    Ok(serde_json::json!({
+        "all_ready": all_ready,
+        "models": status_map,
+    }))
+}
+
+/// Get all available models and their info.
+#[tauri::command]
+fn get_available_models() -> serde_json::Value {
+    let models = model_downloader::get_model_list();
+    serde_json::json!(models)
+}
+
+/// Download all required models. Emits 'model-download-progress' events.
+#[tauri::command]
+async fn download_models(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let models_dir = model_downloader::get_models_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&models_dir).map_err(|e| e.to_string())?;
+
+    let handle = app_handle.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        model_downloader::download_all_models(&handle, &models_dir)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok("All models downloaded successfully!".to_string())
 }
 
 // ─── Legacy: simple text generation (Chat.jsx compatibility) ──────────────────
@@ -442,6 +482,10 @@ pub fn run() {
             tool_manager: Arc::new(ToolManager::new()),
         })
         .invoke_handler(tauri::generate_handler![
+            // Setup / Download
+            check_models_downloaded,
+            get_available_models,
+            download_models,
             // Model management
             load_model,
             load_large_model,
