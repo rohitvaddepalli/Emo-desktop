@@ -1,0 +1,99 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Emo Robot",
+  "version": "1.0.0",
+  "identifier": "com.emo.robot.companion",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Emo Robot",
+        "width": 300,
+        "height": 400,
+        "minWidth": 140,
+        "minHeight": 140,
+        "resizable": true,
+        "fullscreen": false,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": false,
+        "shadow": false,
+        "center": false,
+        "x": null,
+        "y": null
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+    "externalBin": [],
+    "copyright": "© 2026 Emo Project Contributors",
+    "category": "Utility",
+    "shortDescription": "Your AI-powered local desktop companion",
+    "longDescription": "Emo Robot Companion is a privacy-first AI assistant that runs entirely locally on your desktop. It features expressive animated eyes, voice interaction, task automation, and natural conversation — all powered by quantized Qwen models with no internet required.",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "wix": {
+        "language": "en-US"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "headerImage": null,
+        "sidebarImage": null,
+        "compression": "lzma"
+      }
+    },
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.13",
+      "entitlements": null,
+      "signingIdentity": null,
+      "providerShortName": null,
+      "dmg": {
+        "background": null,
+        "windowPosition": {
+          "x": 400,
+          "y": 100
+        },
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        }
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [],
+        "section": "utils",
+        "priority": "optional"
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      },
+      "rpm": {
+        "epoch": 0
+      }
+    }
+  }
+}
