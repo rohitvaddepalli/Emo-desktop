@@ -30,7 +30,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data: asset: https://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:5173 http://localhost:5173; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     }
   },
   "bundle": {
@@ -45,10 +45,10 @@
     ],
     "resources": [],
     "externalBin": [],
-    "copyright": "© 2026 Emo Project Contributors",
+    "copyright": "\u00a9 2026 Emo Project Contributors",
     "category": "Utility",
     "shortDescription": "Your AI-powered local desktop companion",
-    "longDescription": "Emo Robot Companion is a privacy-first AI assistant that runs entirely locally on your desktop. It features expressive animated eyes, voice interaction, task automation, and natural conversation — all powered by quantized Qwen models with no internet required.",
+    "longDescription": "Emo Robot Companion is a privacy-first AI assistant that runs entirely locally on your desktop. It features expressive animated eyes, voice interaction, task automation, and natural conversation \u2014 all powered by quantized Qwen models with no internet required.",
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",

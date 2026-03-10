@@ -1,7 +1,7 @@
 use chrono::Local;
 use clipboard::ClipboardProvider;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, Signal, System};
@@ -17,6 +17,40 @@ impl ToolManager {
         Self {
             system: Arc::new(Mutex::new(System::new_all())),
             db: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn allowed_roots() -> Vec<PathBuf> {
+        let mut roots = Vec::new();
+
+        if let Ok(home) = std::env::var("HOME") {
+            roots.push(PathBuf::from(home));
+        }
+        if let Ok(user_profile) = std::env::var("USERPROFILE") {
+            roots.push(PathBuf::from(user_profile));
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            roots.push(cwd);
+        }
+
+        roots
+    }
+
+    fn path_is_allowed(path: &Path) -> bool {
+        let normalized = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        Self::allowed_roots()
+            .into_iter()
+            .any(|root| normalized.starts_with(root))
+    }
+
+    fn ensure_allowed_path(path: &Path) -> Result<(), String> {
+        if Self::path_is_allowed(path) {
+            Ok(())
+        } else {
+            Err(
+                "Access denied: path is outside allowed directories (home or current workspace)."
+                    .to_string(),
+            )
         }
     }
 
@@ -92,6 +126,9 @@ impl ToolManager {
         if !path.exists() {
             return format!("Error: Path '{}' does not exist.", path_str);
         }
+        if let Err(e) = Self::ensure_allowed_path(path) {
+            return e;
+        }
 
         let mut entries = Vec::new();
         match fs::read_dir(path) {
@@ -119,6 +156,9 @@ impl ToolManager {
         let path = Path::new(dir_path);
         if !path.exists() {
             return format!("Error: Directory '{}' does not exist.", dir_path);
+        }
+        if let Err(e) = Self::ensure_allowed_path(path) {
+            return e;
         }
 
         let mut results = Vec::new();
@@ -150,6 +190,9 @@ impl ToolManager {
         if !path.exists() {
             return format!("Error: File '{}' does not exist.", path_str);
         }
+        if let Err(e) = Self::ensure_allowed_path(path) {
+            return e;
+        }
 
         match fs::read_to_string(path) {
             Ok(content) => {
@@ -169,6 +212,18 @@ impl ToolManager {
 
     // Write/create file
     pub fn file_write(&self, path_str: &str, content: &str) -> String {
+        let path = Path::new(path_str);
+        if let Some(parent) = path.parent() {
+            if let Err(e) = Self::ensure_allowed_path(parent) {
+                return e;
+            }
+        }
+
+        if content.len() > 1_000_000 {
+            return "Refusing to write files larger than 1MB via automation for safety."
+                .to_string();
+        }
+
         match fs::write(path_str, content) {
             Ok(_) => format!("Successfully wrote to '{}'", path_str),
             Err(e) => format!("Error writing file: {}", e),
@@ -177,6 +232,17 @@ impl ToolManager {
 
     // Move/rename file
     pub fn file_move(&self, source: &str, dest: &str) -> String {
+        let source_path = Path::new(source);
+        let dest_path = Path::new(dest);
+        if let Err(e) = Self::ensure_allowed_path(source_path) {
+            return e;
+        }
+        if let Some(parent) = dest_path.parent() {
+            if let Err(e) = Self::ensure_allowed_path(parent) {
+                return e;
+            }
+        }
+
         match fs::rename(source, dest) {
             Ok(_) => format!("Successfully moved '{}' to '{}'", source, dest),
             Err(e) => format!("Error moving file: {}", e),
@@ -189,6 +255,9 @@ impl ToolManager {
         if !path.exists() {
             return format!("Error: File '{}' does not exist.", path_str);
         }
+        if let Err(e) = Self::ensure_allowed_path(path) {
+            return e;
+        }
 
         match fs::remove_file(path) {
             Ok(_) => format!("Successfully deleted '{}'", path_str),
@@ -198,14 +267,22 @@ impl ToolManager {
 
     // Launch application
     pub fn app_launch(&self, app_name: &str) -> String {
+        let trimmed = app_name.trim();
+        if trimmed.is_empty() {
+            return "Refusing to launch an empty command.".to_string();
+        }
+        if trimmed.contains(';') || trimmed.contains('&') || trimmed.contains('|') {
+            return "Refusing potentially unsafe app launch characters.".to_string();
+        }
+
         let result = if cfg!(target_os = "windows") {
             Command::new("cmd")
-                .args(["/C", "start", "", app_name])
+                .args(["/C", "start", "", trimmed])
                 .spawn()
         } else if cfg!(target_os = "macos") {
-            Command::new("open").arg(app_name).spawn()
+            Command::new("open").arg(trimmed).spawn()
         } else {
-            Command::new(app_name).spawn()
+            Command::new(trimmed).spawn()
         };
 
         match result {
@@ -319,6 +396,12 @@ impl ToolManager {
         match screens[0].capture() {
             Ok(image) => {
                 let save_path = path.unwrap_or("screenshot.png");
+                let save_path_ref = Path::new(save_path);
+                if let Some(parent) = save_path_ref.parent() {
+                    if let Err(e) = Self::ensure_allowed_path(parent) {
+                        return e;
+                    }
+                }
                 match image.save(save_path) {
                     Ok(_) => format!("Screenshot saved to '{}'", save_path),
                     Err(e) => format!("Error saving screenshot: {}", e),
@@ -330,6 +413,11 @@ impl ToolManager {
 
     // Open URL in browser
     pub fn web_open(&self, url: &str) -> String {
+        let lower = url.to_lowercase();
+        if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+            return "Blocked URL: only http:// and https:// links are allowed.".to_string();
+        }
+
         match open::that(url) {
             Ok(_) => format!("Opened '{}' in browser", url),
             Err(e) => format!("Error opening URL: {}", e),
@@ -349,6 +437,10 @@ impl ToolManager {
 
     // Set timer
     pub fn timer_set(&self, seconds: u64, message: &str) -> String {
+        if seconds == 0 || seconds > 86_400 {
+            return "Timer must be between 1 and 86400 seconds (24h).".to_string();
+        }
+
         let msg = message.to_string();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(seconds));
@@ -405,9 +497,9 @@ impl ToolManager {
                 Ok(out) => {
                     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
                     if stdout.contains("NOT_FOUND") {
-                        format!("No window found matching '{}'" , title)
+                        format!("No window found matching '{}'", title)
                     } else {
-                        format!("Focused window matching '{}'" , title)
+                        format!("Focused window matching '{}'", title)
                     }
                 }
                 Err(e) => format!("Error focusing window: {}", e),
@@ -418,7 +510,10 @@ impl ToolManager {
             // Linux: use wmctrl if available
             match Command::new("wmctrl").args(["-a", title]).status() {
                 Ok(s) if s.success() => format!("Focused window matching '{}'", title),
-                _ => format!("Could not focus window '{}' (wmctrl may not be installed)", title),
+                _ => format!(
+                    "Could not focus window '{}' (wmctrl may not be installed)",
+                    title
+                ),
             }
         }
     }
@@ -441,11 +536,14 @@ impl ToolManager {
         for entry in entries.flatten() {
             let src = entry.path();
             // Skip directories
-            if src.is_dir() { continue; }
+            if src.is_dir() {
+                continue;
+            }
 
             let subfolder = match method {
                 "by_type" => {
-                    let ext = src.extension()
+                    let ext = src
+                        .extension()
                         .map(|e| e.to_string_lossy().to_lowercase())
                         .unwrap_or_default();
                     let category = match ext.as_str() {
@@ -470,7 +568,12 @@ impl ToolManager {
                         Err(_) => "Unknown".to_string(),
                     }
                 }
-                _ => return format!("Unknown organize method '{}'. Use 'by_type' or 'by_date'.", method),
+                _ => {
+                    return format!(
+                        "Unknown organize method '{}'. Use 'by_type' or 'by_date'.",
+                        method
+                    )
+                }
             };
 
             let dest_dir = path.join(&subfolder);
@@ -491,15 +594,26 @@ impl ToolManager {
             }
 
             if let Err(e) = fs::rename(&src, &dest) {
-                errors.push(format!("Failed to move '{}': {}", file_name.to_string_lossy(), e));
+                errors.push(format!(
+                    "Failed to move '{}': {}",
+                    file_name.to_string_lossy(),
+                    e
+                ));
             } else {
                 moved += 1;
             }
         }
 
-        let mut result = format!("Organized {} file(s) by {} in '{}'.", moved, method, path_str);
+        let mut result = format!(
+            "Organized {} file(s) by {} in '{}'.",
+            moved, method, path_str
+        );
         if !errors.is_empty() {
-            result.push_str(&format!(" {} error(s): {}", errors.len(), errors.join("; ")));
+            result.push_str(&format!(
+                " {} error(s): {}",
+                errors.len(),
+                errors.join("; ")
+            ));
         }
         result
     }
